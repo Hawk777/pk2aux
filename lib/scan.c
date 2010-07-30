@@ -127,8 +127,6 @@ static int examine_device(struct usb_device *device) {
 			devices = 0;
 			num_devices = 0;
 		}
-		usb_release_interface(handle, 0);
-		usb_close(handle);
 		errno = saved_errno;
 		return -1;
 	}
