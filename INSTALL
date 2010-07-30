@@ -1,0 +1,3 @@
+To compile PK2AUX, you will require libusb-1.0. Once that's installed, just run "make".
+
+To install the utilities to /usr/local/bin so you can use them without typing a full path, run "make install" as root.
