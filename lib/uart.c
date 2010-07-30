@@ -60,7 +60,7 @@ int pk2aux_start_uart(pk2aux_handle handle, unsigned int baud) {
 
 
 int pk2aux_stop_uart(pk2aux_handle handle) {
-	unsigned int buffer[64];
+	unsigned char buffer[2];
 
 	if (!handle->uart_enabled)
 		return 0;
