@@ -1,7 +1,7 @@
 world: apps
 
 CFLAGS := -Wall -Wextra -g -iquote lib/include
-APPS := ls reset id pin uart
+APPS := ls ver reset id pin uart
 
 # Include the library makefile and each app's makefile.
 include lib/Makefile.inc

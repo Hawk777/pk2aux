@@ -314,3 +314,21 @@ void pk2aux_close(pk2aux_handle handle) {
 	free(handle);
 }
 
+
+
+int pk2aux_get_version(pk2aux_handle handle, unsigned int *major, unsigned int *minor, unsigned int *micro) {
+	unsigned char buffer[64];
+
+	buffer[0] = FIRMWARE_VERSION;
+	if (pk2aux_write(handle, buffer, 1) < 0)
+		return -1;
+
+	if (pk2aux_read(handle, buffer) < 0)
+		return -1;
+
+	*major = buffer[0];
+	*minor = buffer[1];
+	*micro = buffer[2];
+	return 0;
+}
+

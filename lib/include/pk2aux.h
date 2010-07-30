@@ -109,6 +109,15 @@ void pk2aux_close(pk2aux_handle handle);
 
 
 /*
+ * Gets the firmware version in the device.
+ *
+ * Returns 0 on succes, -1 on failure.
+ */
+int pk2aux_get_version(pk2aux_handle handle, unsigned int *major, unsigned int *minor, unsigned int *micro);
+
+
+
+/*
  * Sets the unid ID of a PICkit2. The unit ID may be up to 15
  * characters in length. Pass a NULL pointer to remove the unit
  * ID. This is not the same as setting the unit ID to an empty string,
