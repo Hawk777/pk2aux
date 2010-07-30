@@ -156,7 +156,7 @@ static void usage(const char *appname) {
 int main(int argc, char **argv) {
 	int rc;
 	char path[PATH_MAX + 1] = "";
-	unsigned int baud = 0, poll_interval;
+	unsigned int baud = 0, poll_interval = 0;
 	int old_flags;
 	pk2aux_device *device;
 	pk2aux_handle handle;
