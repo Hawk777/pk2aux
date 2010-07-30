@@ -2,7 +2,7 @@ world: apps
 
 CFLAGS := -Wall -Wextra -O2 -march=native -iquote lib/include `pkg-config --cflags libusb-1.0`
 LIBS := `pkg-config --libs libusb-1.0`
-APPS := ls ver reset id pin uart
+APPS := id ls pin reset uart ver
 
 # Include the library makefile and each app's makefile.
 include lib/Makefile.inc
