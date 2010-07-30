@@ -1,6 +1,6 @@
 world: apps
 
-CFLAGS := -Wall -Wextra -g -iquote lib/include
+CFLAGS := -Wall -Wextra -O2 -march=native -iquote lib/include
 APPS := ls ver reset id pin uart
 
 # Include the library makefile and each app's makefile.
