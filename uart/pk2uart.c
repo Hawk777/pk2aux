@@ -16,16 +16,17 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "pk2aux.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <libusb.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
-#include <errno.h>
-#include <getopt.h>
-#include <sys/select.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include "pk2aux.h"
+#include <sys/select.h>
 
 
 
@@ -40,6 +41,7 @@ static const char SHORT_OPTIONS[] = "d:b:h";
 
 
 static int do_uart(const char *appname, pk2aux_handle handle, unsigned int poll_interval) {
+	int rc;
 	struct timeval tv;
 	fd_set rfds, wfds, efds;
 	unsigned char buffer[64];
@@ -50,9 +52,9 @@ static int do_uart(const char *appname, pk2aux_handle handle, unsigned int poll_
 	for (;;) {
 		/* Try reading from the PICkit2's UART. */
 		length = sizeof(buffer);
-		if (pk2aux_receive_uart(handle, buffer, &length)) {
-			perror(appname);
-			return EXIT_FAILURE;
+		if ((rc = pk2aux_receive_uart(handle, buffer, &length)) < 0) {
+			fprintf(stderr, "%s: %s\n", appname, pk2aux_error_string(rc));
+			return rc;
 		}
 
 		/* If we read some data, dump it to stdout. */
@@ -71,12 +73,12 @@ static int do_uart(const char *appname, pk2aux_handle handle, unsigned int poll_
 				selectrc = select(2, 0, &wfds, 0, 0);
 				if (selectrc < 0 && errno != EINTR) {
 					perror(appname);
-					return EXIT_FAILURE;
+					return LIBUSB_ERROR_IO;
 				}
 			} else if (rwrc < 0) {
 				/* The write encountered an error. */
 				perror(appname);
-				return EXIT_FAILURE;
+				return LIBUSB_ERROR_IO;
 			} else {
 				/* The write wrote rwrc bytes worth of data. */
 				sent += rwrc;
@@ -103,16 +105,16 @@ static int do_uart(const char *appname, pk2aux_handle handle, unsigned int poll_
 			} while (rwrc < 0 && errno == EINTR);
 			if (rwrc < 0 && errno != EAGAIN) {
 				perror(appname);
-				return EXIT_FAILURE;
+				return LIBUSB_ERROR_IO;
 			}
 			if (rwrc == 0) {
-				return EXIT_SUCCESS;
+				return LIBUSB_ERROR_IO;
 			}
 			if (rwrc > 0) {
 				/* Send the bytes to the PICkit2. */
-				if (pk2aux_send_uart(handle, buffer, rwrc) < 0) {
-					perror(appname);
-					return EXIT_FAILURE;
+				if ((rc = pk2aux_send_uart(handle, buffer, rwrc)) < 0) {
+					fprintf(stderr, "%s: %s\n", appname, pk2aux_error_string(rc));
+					return rc;
 				}
 			}
 		}
@@ -155,22 +157,17 @@ static void usage(const char *appname) {
 
 int main(int argc, char **argv) {
 	int rc;
-	char path[PATH_MAX + 1] = "";
+	const char *path = 0;
 	unsigned int baud = 0, poll_interval = 0;
 	int old_flags;
-	pk2aux_device *device;
-	pk2aux_handle handle;
+	pk2aux_device *device = 0;
+	pk2aux_handle handle = 0;
+	int in_uart_mode = 0;
 
-	path[0] = '\0';
 	while ((rc = getopt_long(argc, argv, SHORT_OPTIONS, LONG_OPTIONS, 0)) != -1) {
 		switch (rc) {
 			case 'd':
-				if (strlen(optarg) > PATH_MAX) {
-					errno = ENAMETOOLONG;
-					perror(argv[0]);
-					return EXIT_FAILURE;
-				}
-				strcpy(path, optarg);
+				path = optarg;
 				break;
 
 			case 'b':
@@ -205,41 +202,46 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
-	/* Scan for PICkit2s. */
-	if (pk2aux_scan() < 0) {
-		perror(argv[0]);
-		return EXIT_FAILURE;
+	/* Initialize the library. */
+	if ((rc = pk2aux_init()) < 0) {
+		goto errout;
 	}
 
 	/* Find the requested device. */
 	device = pk2aux_find_device(path);
 	if (!device) {
-		perror(argv[0]);
-		return EXIT_FAILURE;
+		rc = LIBUSB_ERROR_NO_DEVICE;
+		goto errout;
 	}
 
 	/* Open the device. */
-	handle = pk2aux_open(device);
-	if (!handle) {
-		perror(argv[0]);
-		return EXIT_FAILURE;
+	if ((rc = pk2aux_open(device, &handle)) < 0) {
+		goto errout;
 	}
 
 	/* Enter UART mode. */
-	if (pk2aux_start_uart(handle, baud) < 0) {
-		perror(argv[0]);
-		return EXIT_FAILURE;
+	if ((rc = pk2aux_start_uart(handle, baud)) < 0) {
+		goto errout;
 	}
+	in_uart_mode = 1;
 
 	/* Do UART stuff! */
 	rc = do_uart(argv[0], handle, poll_interval);
 
-	/* Restore old stdin flags. */
+out:
+	if (in_uart_mode) {
+		pk2aux_stop_uart(handle);
+	}
+	if (handle) {
+		pk2aux_close(handle);
+		handle = 0;
+	}
+	pk2aux_exit();
 	fcntl(0, F_SETFL, old_flags);
+	return rc == LIBUSB_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
 
-	/* Finished. */
-	pk2aux_stop_uart(handle);
-	pk2aux_close(handle);
-	return rc;
+errout:
+	fprintf(stderr, "%s: %s\n", argv[0], pk2aux_error_string(rc));
+	goto out;
 }
 

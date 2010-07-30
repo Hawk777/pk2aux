@@ -16,13 +16,12 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "pk2aux.h"
+#include <getopt.h>
+#include <libusb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
-#include <errno.h>
-#include <getopt.h>
-#include "pk2aux.h"
 
 
 
@@ -36,41 +35,47 @@ static const char SHORT_OPTIONS[] = "d:h";
 
 
 static int show_version(const char *appname, const char *path) {
-	pk2aux_device *device;
-	pk2aux_handle handle;
+	int rc;
+	pk2aux_device *device = 0;
+	pk2aux_handle handle = 0;
 	unsigned int major, minor, micro;
 
-	/* Find the device. */
-	if (pk2aux_scan() < 0) {
-		perror(appname);
-		return EXIT_FAILURE;
+	/* Initialize the library. */
+	if ((rc = pk2aux_init()) < 0) {
+		goto errout;
 	}
+
+	/* Find the device. */
 	device = pk2aux_find_device(path);
 	if (!device) {
-		perror(appname);
-		return EXIT_FAILURE;
+		rc = LIBUSB_ERROR_NO_DEVICE;
+		goto errout;
 	}
 
 	/* Open the device. */
-	handle = pk2aux_open(device);
-	if (!handle) {
-		perror(appname);
-		return EXIT_FAILURE;
+	if ((rc = pk2aux_open(device, &handle)) < 0) {
+		goto errout;
 	}
 
 	/* Show the version number. */
-	if (pk2aux_get_version(handle, &major, &minor, &micro) < 0) {
-		perror(appname);
-		pk2aux_close(handle);
-		return EXIT_FAILURE;
+	if ((rc = pk2aux_get_version(handle, &major, &minor, &micro)) < 0) {
+		goto errout;
 	}
 
 	printf("%u.%u.%u\n", major, minor, micro);
+	rc = LIBUSB_SUCCESS;
 
-	/* Close the handle. */
-	pk2aux_close(handle);
+out:
+	if (handle) {
+		pk2aux_close(handle);
+		handle = 0;
+	}
+	pk2aux_exit();
+	return rc == LIBUSB_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
 
-	return EXIT_SUCCESS;
+errout:
+	fprintf(stderr, "%s: %s\n", appname, pk2aux_error_string(rc));
+	goto out;
 }
 
 
@@ -79,26 +84,22 @@ static void usage(const char *appname) {
 	fprintf(stderr, "Usage: %s [options]\n"
 			"Options:\n"
 			" -d path, --device path      the path to the PICkit2, as printed by pk2ls\n"
-			" -h, --help                  display this usage message\n",
-			appname);
+			" -h, --help                  display this usage message\n"
+			"\n"
+			"Displays the version of the firmware installed on the PICkit2.\n",
+		appname);
 }
 
 
 
 int main(int argc, char **argv) {
 	int rc;
-	char path[PATH_MAX + 1];
+	const char *path = 0;
 
-	path[0] = '\0';
 	while ((rc = getopt_long(argc, argv, SHORT_OPTIONS, LONG_OPTIONS, 0)) != -1) {
 		switch (rc) {
 			case 'd':
-				if (strlen(optarg) > PATH_MAX) {
-					errno = ENAMETOOLONG;
-					perror(argv[0]);
-					return EXIT_FAILURE;
-				}
-				strcpy(path, optarg);
+				path = optarg;
 				break;
 
 			case 'h':

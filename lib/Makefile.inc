@@ -1,4 +1,4 @@
-LIB_OBJS := rw.o scan.o id.o power.o sigpins.o uart.o
+LIB_OBJS := id.o error.o power.o rw.o scan.o sigpins.o uart.o
 LIB_OUT := lib/libpk2aux.a
 
 # Clean by removing all object modules plus the library file.

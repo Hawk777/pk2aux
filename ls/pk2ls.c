@@ -16,10 +16,10 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <getopt.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include "pk2aux.h"
+#include <getopt.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 
 
@@ -35,8 +35,11 @@ static void usage(const char *appname) {
 	fprintf(stderr,
 			"Usage: %s [options]\n"
 			"Options:\n"
-			" -h, --help    display this usage message\n",
-			appname);
+			" -h, --help    display this usage message\n"
+			"\n"
+			"Displays a list of all PICkit2 devices attached to the system, along with the\n"
+			"bus number and device address of each.\n",
+		appname);
 }
 
 
@@ -62,17 +65,20 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
-	/* Scan for devices. */
-	if (pk2aux_scan() < 0) {
-		perror(argv[0]);
+	/* Initialize the library. */
+	if ((rc = pk2aux_init()) < 0) {
+		fprintf(stderr, "%s: %s\n", argv[0], pk2aux_error_string(rc));
 		return 1;
 	}
 
 	/* Display a list of devices. */
 	dlist = pk2aux_get_devices();
 	for (i = 0; i < dlist.num_devices; i++) {
-		printf("%s\t%s\n", dlist.devices[i].usb_path, dlist.devices[i].unit_id);
+		printf("%d:%d\t%s\n", dlist.devices[i].bus_number, dlist.devices[i].device_address, dlist.devices[i].unit_id);
 	}
+
+	/* Deinitialize the library. */
+	pk2aux_exit();
 
 	return 0;
 }

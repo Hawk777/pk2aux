@@ -16,13 +16,9 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include "pk2aux.h"
-#include "internal.h"
 #include "cmd.h"
+#include "internal.h"
 #include <string.h>
-#include <errno.h>
-#include <string.h>
-#include <assert.h>
 
 
 
@@ -36,12 +32,11 @@ int pk2aux_set_id(pk2aux_handle handle, const char *id) {
 	/* Length. */
 	buffer[2] = 16;
 
-	/* Check whether the ID is to be removed. */
+	/* Check whether the ID is to be set or removed. */
 	if (id) {
 		/* Check that the ID string is short enough. */
 		if (strlen(id) > 15) {
-			errno = ENOSPC;
-			return -1;
+			return LIBUSB_ERROR_OVERFLOW;
 		}
 		/* A # character indicates that the ID string is valid. */
 		buffer[3] = '#';
@@ -51,9 +46,6 @@ int pk2aux_set_id(pk2aux_handle handle, const char *id) {
 		memset(buffer + 3, 0xFF, 16);
 	}
 
-	if (pk2aux_write(handle, buffer, 19) < 0)
-		return -1;
-
-	return 0;
+	return pk2aux_write(handle, buffer, 19);
 }
 

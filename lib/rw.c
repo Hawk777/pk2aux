@@ -16,39 +16,28 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include "pk2aux.h"
-#include "internal.h"
 #include "cmd.h"
+#include "internal.h"
 #include <string.h>
-#include <errno.h>
-#include <usb.h>
 
 
 
-int pk2aux_write_usb(usb_dev_handle *handle, const void *data, size_t length) {
-	int rc;
+int pk2aux_write_usb(libusb_device_handle *handle, const void *data, size_t length) {
 	unsigned char buffer[64];
+	int transferred;
 
-	if (length == 0)
+	if (length == 0) {
 		return 0;
+	}
+
 	if (length > 64) {
-		errno = EMSGSIZE;
-		return -1;
+		return LIBUSB_ERROR_OVERFLOW;
 	}
 
 	memcpy(buffer, data, length);
 	memset(buffer + length, END_OF_BUFFER, sizeof(buffer) - length);
 
-	rc = usb_interrupt_write(handle, 0x01, (char *) buffer, sizeof(buffer), 1000);
-	if (rc < 0) {
-		errno = -rc;
-		return -1;
-	} else if (rc != sizeof(buffer)) {
-		errno = EIO;
-		return -1;
-	}
-
-	return 0;
+	return libusb_interrupt_transfer(handle, 0x01, buffer, sizeof(buffer), &transferred, 1000);
 }
 
 
@@ -59,19 +48,10 @@ int pk2aux_write(pk2aux_handle handle, const void *data, size_t length) {
 
 
 
-int pk2aux_read_usb(usb_dev_handle *handle, void *data) {
-	int rc;
+int pk2aux_read_usb(libusb_device_handle *handle, void *data) {
+	int transferred;
 
-	rc = usb_interrupt_read(handle, 0x81, data, 64, 1000);
-	if (rc < 0) {
-		errno = -rc;
-		return -1;
-	} else if (rc != 64) {
-		errno = EIO;
-		return -1;
-	}
-
-	return 0;
+	return libusb_interrupt_transfer(handle, 0x81, data, 64, &transferred, 1000);
 }
 
 

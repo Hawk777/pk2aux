@@ -16,78 +16,114 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include "pk2aux.h"
-#include "internal.h"
 #include "cmd.h"
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-#include <errno.h>
+#include "internal.h"
 #include <assert.h>
-#include <usb.h>
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 
 
 static const uint16_t VID_MICROCHIP = 0x04D8;
 static const uint16_t PID_PK2 = 0x0033;
+static libusb_context *usb_context = 0;
 static pk2aux_device *devices = 0;
 static unsigned int num_devices = 0;
 
 
 
-static int examine_device(struct usb_device *device) {
-	struct usb_dev_handle *handle;
+static int examine_device(libusb_device *device) {
+	libusb_device_handle *handle = 0;
+	struct libusb_device_descriptor ddev;
 	unsigned char buffer[64];
-	pk2aux_device *tmp;
-	int saved_errno;
+	pk2aux_device *tmp = 0;
+	int original_config, tmp_config;
+
+	/* Get device descriptor. */
+	if (libusb_get_device_descriptor(device, &ddev) < 0) {
+		return 0;
+	}
 
 	/* Check vendor and product ID. */
-	if (device->descriptor.idVendor != VID_MICROCHIP || device->descriptor.idProduct != PID_PK2) {
+	if (ddev.idVendor != VID_MICROCHIP || ddev.idProduct != PID_PK2) {
 		return 0;
 	}
 
 	/* Open the device. We want to probe firmware version and see if it has a unit ID. */
-	handle = usb_open(device);
-	if (!handle) {
+	if (libusb_open(device, &handle) < 0) {
 		return 0;
+	}
+
+	/* Get the configuration index the device was originally in. */
+	if (libusb_get_configuration(handle, &original_config) < 0) {
+		libusb_close(handle);
+		return 0;
+	}
+	if (!original_config) {
+		original_config = -1;
 	}
 
 	/* PICkit2s have 2 configurations; the first is HID and the second is non-HID.
 	 * I suspect using the non-HID configuration may yield better results as it may
 	 * make kernel drivers less likely to grab hold of the PICkit2. */
-	if (usb_set_configuration(handle, 2) < 0) {
-		usb_close(handle);
-		return 0;
+	if (original_config != 2) {
+		if (libusb_set_configuration(handle, 2) < 0) {
+			libusb_close(handle);
+			return 0;
+		}
 	}
 
 	/* Claim the interface. */
-	if (usb_claim_interface(handle, 0) < 0) {
-		usb_close(handle);
+	if (libusb_claim_interface(handle, 0) < 0) {
+		if (original_config != 2) {
+			libusb_set_configuration(handle, original_config);
+		}
+		libusb_close(handle);
+		return 0;
+	}
+
+	/* Check that the configuration index hasn't changed since. */
+	if (libusb_get_configuration(handle, &tmp_config) < 0) {
+		libusb_release_interface(handle, 0);
+		libusb_close(handle);
+		return 0;
+	}
+	if (tmp_config != 2) {
+		libusb_release_interface(handle, 0);
+		libusb_close(handle);
 		return 0;
 	}
 
 	/* First ask for firmware version. */
 	buffer[0] = FIRMWARE_VERSION;
 	if (pk2aux_write_usb(handle, buffer, 1) < 0) {
-		saved_errno = errno;
-		usb_release_interface(handle, 0);
-		usb_close(handle);
-		errno = saved_errno;
+		libusb_release_interface(handle, 0);
+		if (original_config != 2) {
+			libusb_set_configuration(handle, original_config);
+		}
+		libusb_close(handle);
 		return 0;
 	}
 	if (pk2aux_read_usb(handle, buffer) < 0) {
-		saved_errno = errno;
-		usb_release_interface(handle, 0);
-		usb_close(handle);
-		errno = saved_errno;
+		libusb_release_interface(handle, 0);
+		if (original_config != 2) {
+			libusb_set_configuration(handle, original_config);
+		}
+		libusb_close(handle);
 		return 0;
 	}
 	/* Assume that major version != 2 means an incompatible protocol, and maybe
 	 * minor version < 30 means some commands we want aren't supported.
 	 * The protocol datasheet is for version 2.30. */
 	if (buffer[0] != 2 || buffer[1] < 30) {
-		usb_release_interface(handle, 0);
-		usb_close(handle);
+		libusb_release_interface(handle, 0);
+		if (original_config != 2) {
+			libusb_set_configuration(handle, original_config);
+		}
+		libusb_close(handle);
 		return 0;
 	}
 
@@ -96,23 +132,29 @@ static int examine_device(struct usb_device *device) {
 	buffer[1] = 0xF0;
 	buffer[2] = 16;
 	if (pk2aux_write_usb(handle, buffer, 3) < 0) {
-		saved_errno = errno;
-		usb_release_interface(handle, 0);
-		usb_close(handle);
-		errno = saved_errno;
+		libusb_release_interface(handle, 0);
+		if (original_config != 2) {
+			libusb_set_configuration(handle, original_config);
+		}
+		libusb_close(handle);
 		return 0;
 	}
 	if (pk2aux_read_usb(handle, buffer) < 0) {
-		saved_errno = errno;
-		usb_release_interface(handle, 0);
-		usb_close(handle);
-		errno = saved_errno;
+		libusb_release_interface(handle, 0);
+		if (original_config != 2) {
+			libusb_set_configuration(handle, original_config);
+		}
+		libusb_close(handle);
 		return 0;
 	}
 
 	/* Release and close the device. */
-	usb_release_interface(handle, 0);
-	usb_close(handle);
+	libusb_release_interface(handle, 0);
+	if (original_config != 2) {
+		libusb_set_configuration(handle, original_config);
+	}
+	libusb_close(handle);
+	handle = 0;
 
 	/* Allocate a new device structure to hold the new device's data. */
 	if (devices) {
@@ -121,14 +163,12 @@ static int examine_device(struct usb_device *device) {
 		tmp = malloc((num_devices + 1) * sizeof(pk2aux_device));
 	}
 	if (!tmp) {
-		saved_errno = errno;
 		if (devices) {
 			free(devices);
 			devices = 0;
 			num_devices = 0;
 		}
-		errno = saved_errno;
-		return -1;
+		return LIBUSB_ERROR_NO_MEM;
 	}
 	devices = tmp;
 
@@ -138,75 +178,80 @@ static int examine_device(struct usb_device *device) {
 	if (buffer[0] == '#') {
 		memcpy(devices[num_devices].unit_id, buffer + 1, 15);
 	}
-	strcpy(devices[num_devices].usb_path, device->bus->dirname);
-	strcat(devices[num_devices].usb_path, "/");
-	strcat(devices[num_devices].usb_path, device->filename);
+	devices[num_devices].bus_number = libusb_get_bus_number(device);
+	devices[num_devices].device_address = libusb_get_device_address(device);
 	devices[num_devices].private_data = device;
 	num_devices++;
+
+	/* Keep the libusb device structure in memory. */
+	libusb_ref_device(device);
 
 	return 0;
 }
 
 
 
-int pk2aux_scan(void) {
-	struct usb_bus *bus;
-	struct usb_device *device;
+int pk2aux_init(void) {
+	int rc;
+	libusb_device **usb_devices = 0;
+	ssize_t sz, i;
+
+	/* Check if already initialized. */
+	if (usb_context) {
+		return LIBUSB_ERROR_BUSY;
+	}
 
 	/* Initialize libusb. */
-	usb_init();
-	usb_find_busses();
-	usb_find_devices();
+	if ((rc = libusb_init(&usb_context)) < 0) {
+		return rc;
+	}
 
-	/* Free any existing block of device structures. */
+	/* Get the device list. */
+	sz = libusb_get_device_list(usb_context, &usb_devices);
+	if (sz < 0) {
+		libusb_exit(usb_context);
+		usb_context = 0;
+		return sz;
+	}
+
+	/* Walk the devices looking for PICkit2s. */
+	for (i = 0; i < sz; ++i) {
+		if ((rc = examine_device(usb_devices[i])) < 0) {
+			break;
+		}
+	}
+
+	/* Free the list and those devices that were not reffed by examine_device. */
+	libusb_free_device_list(usb_devices, 1);
+
+	/* If examine_device failed for some device, call pk2aux_exit() and return the error code. */
+	if (rc < 0) {
+		pk2aux_exit();
+		return rc;
+	} else {
+		return 0;
+	}
+}
+
+
+
+void pk2aux_exit(void) {
+	unsigned int i;
+
+	for (i = 0; i < num_devices; ++i) {
+		libusb_unref_device((libusb_device *) devices[i].private_data);
+	}
+
 	if (devices) {
 		free(devices);
 		devices = 0;
 		num_devices = 0;
 	}
 
-	/* Walk the busses looking for PICkit2 devices. */
-	for (bus = usb_get_busses(); bus; bus = bus->next) {
-		for (device = bus->devices; device; device = device->next) {
-			if (examine_device(device) < 0) {
-				return -1;
-			}
-		}
+	if (usb_context) {
+		libusb_exit(usb_context);
+		usb_context = 0;
 	}
-
-	return 0;
-}
-
-
-
-pk2aux_device *pk2aux_find_device(const char *path) {
-	unsigned int i;
-
-	/* Check that we have initialized and found a list of devices. */
-	if (!devices) {
-		errno = ENODEV;
-		return 0;
-	}
-
-	/* If the path is empty, then only succeed if there is exactly one device. */
-	if (!path[0]) {
-		if (num_devices == 1) {
-			return &devices[0];
-		} else {
-			errno = ENODEV;
-			return 0;
-		}
-	}
-
-	/* Scan for the requested device. */
-	for (i = 0; i < num_devices; i++) {
-		if (strcmp(path, devices[i].usb_path) == 0) {
-			return &devices[i];
-		}
-	}
-
-	errno = ENODEV;
-	return 0;
 }
 
 
@@ -221,42 +266,100 @@ pk2aux_device_list pk2aux_get_devices(void) {
 
 
 
-pk2aux_handle pk2aux_open(pk2aux_device *device) {
+pk2aux_device *pk2aux_find_device(const char *path) {
+	uint8_t bus_number, device_address;
+	unsigned int i;
+
+	/* Check if this is the NULL path case. */
+	if (!path) {
+		if (num_devices == 1) {
+			return &devices[0];
+		} else {
+			return 0;
+		}
+	}
+
+	/* Try to parse the path. */
+	if (sscanf(path, "%" SCNu8 ":%" SCNu8, &bus_number, &device_address) != 2) {
+		return 0;
+	}
+
+	/* Scan for the requested device. */
+	for (i = 0; i < num_devices; i++) {
+		if (devices[i].bus_number == bus_number && devices[i].device_address == device_address) {
+			return &devices[i];
+		}
+	}
+
+	return 0;
+}
+
+
+
+int pk2aux_open(pk2aux_device *device, pk2aux_handle *result) {
 	pk2aux_handle handle;
-	int saved_errno, rc;
+	int rc, tmp_config;
 	unsigned char buffer[64];
 
 	/* Allocate space for the private data structure. */
 	handle = malloc(sizeof(*handle));
 	if (!handle) {
-		return 0;
+		return LIBUSB_ERROR_NO_MEM;
 	}
 
 	/* Open the PICkit2. */
-	handle->usb_handle = usb_open((struct usb_device *) device->private_data);
-	if (!handle->usb_handle) {
-		saved_errno = errno;
+	if ((rc = libusb_open((libusb_device *) device->private_data, &handle->usb_handle)) < 0) {
 		free(handle);
-		errno = saved_errno;
-		return 0;
+		return rc;
 	}
 
-	/* Set it to the non-HID configuration. */
-	rc = usb_set_configuration(handle->usb_handle, 2);
-	if (rc < 0) {
-		usb_close(handle->usb_handle);
+	/* Get its current configuration. */
+	if ((rc = libusb_get_configuration(handle->usb_handle, &handle->original_configuration)) < 0) {
+		libusb_close(handle->usb_handle);
 		free(handle);
-		errno = -rc;
-		return 0;
+		return rc;
+	}
+	if (handle->original_configuration == 0) {
+		handle->original_configuration = -1;
+	}
+
+	/* Set it to the non-HID configuration if needed. */
+	if (handle->original_configuration != 2) {
+		if ((rc = libusb_set_configuration(handle->usb_handle, 2)) < 0) {
+			libusb_close(handle->usb_handle);
+			free(handle);
+			return rc;
+		}
 	}
 
 	/* Claim the interface containing the two endpoints. */
-	rc = usb_claim_interface(handle->usb_handle, 0);
-	if (rc < 0) {
-		usb_close(handle->usb_handle);
+	if ((rc = libusb_claim_interface(handle->usb_handle, 0)) < 0) {
+		if (handle->original_configuration != 2) {
+			libusb_set_configuration(handle->usb_handle, handle->original_configuration);
+		}
+		libusb_close(handle->usb_handle);
 		free(handle);
-		errno = -rc;
-		return 0;
+		return rc;
+	}
+
+	/* Verify that we got the proper configuration. */
+	if ((rc = libusb_get_configuration(handle->usb_handle, &tmp_config)) < 0) {
+		libusb_release_interface(handle->usb_handle, 0);
+		if (handle->original_configuration != 2) {
+			libusb_set_configuration(handle->usb_handle, handle->original_configuration);
+		}
+		libusb_close(handle->usb_handle);
+		free(handle);
+		return rc;
+	}
+	if (tmp_config != 2) {
+		libusb_release_interface(handle->usb_handle, 0);
+		if (handle->original_configuration != 2) {
+			libusb_set_configuration(handle->usb_handle, handle->original_configuration);
+		}
+		libusb_close(handle->usb_handle);
+		free(handle);
+		return LIBUSB_ERROR_BUSY;
 	}
 
 	/* The firmware doesn't contain any commands directly intended to probe
@@ -277,22 +380,24 @@ pk2aux_handle pk2aux_open(pk2aux_device *device) {
 	buffer[2] = PEEK_SFR;
 	buffer[3] = 0x92; /* TRISA */
 	buffer[4] = UPLOAD_DATA;
-	if (pk2aux_write(handle, buffer, 5) < 0) {
-		saved_errno = errno;
-		usb_release_interface(handle->usb_handle, 0);
-		usb_close(handle->usb_handle);
+	if ((rc = pk2aux_write(handle, buffer, 5)) < 0) {
+		libusb_release_interface(handle->usb_handle, 0);
+		if (handle->original_configuration != 2) {
+			libusb_set_configuration(handle->usb_handle, handle->original_configuration);
+		}
+		libusb_close(handle->usb_handle);
 		free(handle);
-		errno = saved_errno;
-		return 0;
+		return rc;
 	}
 
-	if (pk2aux_read(handle, buffer) < 0) {
-		saved_errno = errno;
-		usb_release_interface(handle->usb_handle, 0);
-		usb_close(handle->usb_handle);
+	if ((rc = pk2aux_read(handle, buffer)) < 0) {
+		libusb_release_interface(handle->usb_handle, 0);
+		if (handle->original_configuration != 2) {
+			libusb_set_configuration(handle->usb_handle, handle->original_configuration);
+		}
+		libusb_close(handle->usb_handle);
 		free(handle);
-		errno = saved_errno;
-		return 0;
+		return rc;
 	}
 
 	assert(buffer[0] == 1);
@@ -301,7 +406,8 @@ pk2aux_handle pk2aux_open(pk2aux_device *device) {
 
 	handle->uart_enabled = 0;
 
-	return handle;
+	*result = handle;
+	return 0;
 }
 
 
@@ -309,24 +415,29 @@ pk2aux_handle pk2aux_open(pk2aux_device *device) {
 void pk2aux_reset(pk2aux_handle handle) {
 	unsigned char buffer[1];
 
-	if (handle->uart_enabled)
+	if (handle->uart_enabled) {
 		pk2aux_stop_uart(handle);
+	}
 
 	buffer[0] = RESET;
 	pk2aux_write(handle, buffer, 1);
-	usb_reset(handle->usb_handle);
-	usb_close(handle->usb_handle);
+	libusb_reset_device(handle->usb_handle);
+	libusb_close(handle->usb_handle);
 	free(handle);
 }
 
 
 
 void pk2aux_close(pk2aux_handle handle) {
-	if (handle->uart_enabled)
+	if (handle->uart_enabled) {
 		pk2aux_stop_uart(handle);
+	}
 
-	usb_release_interface(handle->usb_handle, 0);
-	usb_close(handle->usb_handle);
+	libusb_release_interface(handle->usb_handle, 0);
+	if (handle->original_configuration != 2) {
+		libusb_set_configuration(handle->usb_handle, handle->original_configuration);
+	}
+	libusb_close(handle->usb_handle);
 	free(handle);
 }
 
@@ -334,13 +445,16 @@ void pk2aux_close(pk2aux_handle handle) {
 
 int pk2aux_get_version(pk2aux_handle handle, unsigned int *major, unsigned int *minor, unsigned int *micro) {
 	unsigned char buffer[64];
+	int rc;
 
 	buffer[0] = FIRMWARE_VERSION;
-	if (pk2aux_write(handle, buffer, 1) < 0)
-		return -1;
+	if ((rc = pk2aux_write(handle, buffer, 1)) < 0) {
+		return rc;
+	}
 
-	if (pk2aux_read(handle, buffer) < 0)
-		return -1;
+	if ((rc = pk2aux_read(handle, buffer)) < 0) {
+		return rc;
+	}
 
 	*major = buffer[0];
 	*minor = buffer[1];

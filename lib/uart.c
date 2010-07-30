@@ -16,39 +16,40 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include "pk2aux.h"
-#include "internal.h"
 #include "cmd.h"
-#include <errno.h>
-#include <math.h>
+#include "internal.h"
 #include <assert.h>
+#include <math.h>
 #include <string.h>
+#include <unistd.h>
 
 
 
 int pk2aux_start_uart(pk2aux_handle handle, unsigned int baud) {
+	int rc;
 	unsigned int brg;
 	unsigned char buffer[3];
+
+	/* Check that the UART isn't already enabled. */
+	if (handle->uart_enabled) {
+		return LIBUSB_ERROR_BUSY;
+	}
 
 	/* 92 is the smallest baud that gives a positive BRG
 	 * 57600 is the largest baud the spec sheet specifies as legal */
 	if (baud < 92 || baud > 57600) {
-		errno = EDOM;
-		return -1;
+		return LIBUSB_ERROR_INVALID_PARAM;
 	}
 
 	brg = (unsigned int) ((65536.0 - (((1.0 / baud) - 3.0e-6) / 1.67e-7)) + 0.5);
 	assert(brg < 65536);
 
-	if (handle->uart_enabled)
-		if (pk2aux_stop_uart(handle) < 0)
-			return -1;
-	
 	buffer[0] = ENTER_UART_MODE;
 	buffer[1] = (unsigned char) (brg & 0xFF);
 	buffer[2] = (unsigned char) (brg >> 8);
-	if (pk2aux_write(handle, buffer, 3) < 0)
-		return -1;
+	if ((rc = pk2aux_write(handle, buffer, 3)) < 0) {
+		return rc;
+	}
 
 	handle->uart_enabled = 1;
 	handle->uart_baud = baud;
@@ -60,23 +61,28 @@ int pk2aux_start_uart(pk2aux_handle handle, unsigned int baud) {
 
 
 int pk2aux_stop_uart(pk2aux_handle handle) {
+	int rc;
 	unsigned char buffer[2];
 
-	if (!handle->uart_enabled)
+	if (!handle->uart_enabled) {
 		return 0;
+	}
 
 	buffer[0] = EXIT_UART_MODE;
 	buffer[1] = CLR_UPLOAD_BUFFER;
-	if (pk2aux_write(handle, buffer, 2) < 0)
-		return -1;
+	if ((rc = pk2aux_write(handle, buffer, 2)) < 0) {
+		return rc;
+	}
 
 	handle->uart_enabled = 0;
+
 	return 0;
 }
 
 
 
 int pk2aux_receive_uart(pk2aux_handle handle, void *data, size_t *length) {
+	int rc;
 	unsigned char buffer[64];
 
 	/* If we're not in UART mode, we have no data to present. */
@@ -88,8 +94,9 @@ int pk2aux_receive_uart(pk2aux_handle handle, void *data, size_t *length) {
 	/* If we have any data buffered, present it first (the buffer must be 100% empty
 	 * before we can request another block from the device). */
 	if (handle->uart_buffer_used) {
-		if (handle->uart_buffer_used < *length)
+		if (handle->uart_buffer_used < *length) {
 			*length = handle->uart_buffer_used;
+		}
 		memcpy(data, handle->uart_buffer, *length);
 		memmove(data, data + *length, handle->uart_buffer_used - *length);
 		handle->uart_buffer_used -= *length;
@@ -98,15 +105,18 @@ int pk2aux_receive_uart(pk2aux_handle handle, void *data, size_t *length) {
 
 	/* Receive some data. */
 	buffer[0] = UPLOAD_DATA;
-	if (pk2aux_write(handle, buffer, 1) < 0)
-		return -1;
+	if ((rc = pk2aux_write(handle, buffer, 1)) < 0) {
+		return rc;
+	}
 
-	if (pk2aux_read(handle, buffer) < 0)
-		return -1;
+	if ((rc = pk2aux_read(handle, buffer)) < 0) {
+		return rc;
+	}
 
 	/* Copy what we can into the application's buffer. */
-	if (*length > buffer[0])
+	if (*length > buffer[0]) {
 		*length = buffer[0];
+	}
 	memcpy(data, buffer + 1, *length);
 
 	/* Copy the rest into the buffer in the handle. */
@@ -119,38 +129,41 @@ int pk2aux_receive_uart(pk2aux_handle handle, void *data, size_t *length) {
 
 
 int pk2aux_send_uart(pk2aux_handle handle, const void *data, size_t length) {
+	int rc;
 	unsigned char buffer[64];
 	size_t to_send;
 	unsigned int to_sleep_total, to_sleep_this;
 
 	/* If we're not in UART mode, fail. */
 	if (!handle->uart_enabled) {
-		errno = -EIO;
-		return -1;
+		return LIBUSB_ERROR_PIPE;
 	}
 
 	/* Keep going as long as there's data left. */
 	while (length) {
 		/* Try to send up to 62 bytes (that's all that fits in a single USB transaction). */
-		if (length > 62)
+		if (length > 62) {
 			to_send = 62;
-		else
+		} else {
 			to_send = length;
+		}
 
 		buffer[0] = DOWNLOAD_DATA;
 		buffer[1] = (unsigned char) to_send;
 		memcpy(buffer + 2, data, to_send);
-		if (pk2aux_write(handle, buffer, to_send + 2) < 0)
-			return -1;
+		if ((rc = pk2aux_write(handle, buffer, to_send + 2)) < 0) {
+			return rc;
+		}
 
 		/* Sleep for the appropriate amount of time to allow the data to drain (we don't want
 		 * to overflow the download buffer, and there's no way to query how much data is in it). */
 		to_sleep_total = 1000U * to_send * 11U / handle->uart_baud;
 		while (to_sleep_total) {
-			if (to_sleep_total > 1000U)
+			if (to_sleep_total > 1000U) {
 				to_sleep_this = 1000000U;
-			else
+			} else {
 				to_sleep_this = to_sleep_total * 1000U;
+			}
 			usleep(to_sleep_this);
 			to_sleep_total -= to_sleep_this / 1000U;
 		}

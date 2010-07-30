@@ -20,7 +20,10 @@
 #define PK2AUX_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <limits.h>
+
+
 
 /*
  * Describes one of the PICkit2 devices connected to the system.
@@ -30,8 +33,11 @@ typedef struct pk2aux_device {
 	 * string if no unit ID is burned in. */
 	char unit_id[16];
 
-	/* The "path" of the device on the USB. */
-	char usb_path[PATH_MAX * 2 + 2];
+	/* The bus number where the device is attached. */
+	uint8_t bus_number;
+
+	/* The address of the device on its bus. */
+	uint8_t device_address;
 
 	/* A pointer to private data used internally by libpk2aux. */
 	void *private_data;
@@ -60,7 +66,7 @@ typedef struct pk2aux_handle_impl *pk2aux_handle;
 
 
 /*
- * A mode into which a power pin can be placed.
+ * A mode into which a pin can be placed.
  */
 enum PIN_MODE {
 	/* Driven to ground. */
@@ -74,11 +80,21 @@ enum PIN_MODE {
 
 
 /*
- * Scans the system for PICkit2 devices. This function must be called before any others.
+ * Initializes libpk2aux and scans the system for PICkit2 devices. This function
+ * must be called to initialize the library before any other functions are
+ * called.
  *
- * Returns 0 on success, negative on error.
+ * Returns 0 on success or a libusb error code on failure.
  */
-int pk2aux_scan(void);
+int pk2aux_init(void);
+
+
+
+/*
+ * Deinitializes libpk2aux. This function must be called after any other
+ * functions.
+ */
+void pk2aux_exit(void);
 
 
 
@@ -92,12 +108,12 @@ pk2aux_device_list pk2aux_get_devices(void);
 
 
 /*
- * Searches the scanned list of PICkit2 devices for the device at the specified path.
- * Provide a pathname equal to the path in one of the pk2aux_device structures to find
- * that device. Providing an empty string will succeed if only one PICkit2 is attached
- * to the system, returning that sole device.
+ * Searches the scanned list of PICkit2 devices for the device at the given
+ * path. The path may be NULL in which case the only device on the system will
+ * be returned (failure if more than one devices is attached). The path string
+ * should be of the form "bus_number:device_address".
  *
- * Returns: the device on success, NULL on failure
+ * Returns the device on success or NULL on failure.
  */
 pk2aux_device *pk2aux_find_device(const char *path);
 
@@ -106,16 +122,9 @@ pk2aux_device *pk2aux_find_device(const char *path);
 /*
  * Opens a PICkit2.
  *
- * Returns a handle on success, NULL on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
-pk2aux_handle pk2aux_open(pk2aux_device *device);
-
-
-
-/*
- * Resets the PICkit2. The handle is also closed; DO NOT call pk2aux_close().
- */
-void pk2aux_reset(pk2aux_handle handle);
+int pk2aux_open(pk2aux_device *device, pk2aux_handle *handle);
 
 
 
@@ -127,22 +136,29 @@ void pk2aux_close(pk2aux_handle handle);
 
 
 /*
+ * Resets the PICkit2. The handle is also closed; DO NOT call pk2aux_close().
+ */
+void pk2aux_reset(pk2aux_handle handle);
+
+
+
+/*
  * Gets the firmware version in the device.
  *
- * Returns 0 on succes, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_version(pk2aux_handle handle, unsigned int *major, unsigned int *minor, unsigned int *micro);
 
 
 
 /*
- * Sets the unid ID of a PICkit2. The unit ID may be up to 15
+ * Sets the unit ID of a PICkit2. The unit ID may be up to 15
  * characters in length. Pass a NULL pointer to remove the unit
  * ID. This is not the same as setting the unit ID to an empty string,
  * though the two situations are indistinguishable with respect to the
  * unid_id field in the pk2aux_device structure.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_id(pk2aux_handle handle, const char *id);
 
@@ -153,7 +169,7 @@ int pk2aux_set_id(pk2aux_handle handle, const char *id);
  * floating, or high. If the pin is set high, it will reflect the voltage set
  * in the most recent call to pk2aux_set_vdd_level() or a PICkit2-defined default.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_vdd_mode(pk2aux_handle handle, enum PIN_MODE mode);
 
@@ -165,7 +181,7 @@ int pk2aux_set_vdd_mode(pk2aux_handle handle, enum PIN_MODE mode);
  * for the voltage generator to stabilize before calling pk2aux_set_vdd_mode() to
  * connect the voltage to the target circuit.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_vdd_level(pk2aux_handle handle, double voltage);
 
@@ -176,7 +192,7 @@ int pk2aux_set_vdd_level(pk2aux_handle handle, double voltage);
  * may be produced by the PICkit2's VDD generator, may be produced by the grounding
  * circuit, or may be produced by the target circuit (if the pin is set floating).
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_vdd_level(pk2aux_handle handle, double *voltage);
 
@@ -188,7 +204,7 @@ int pk2aux_get_vdd_level(pk2aux_handle handle, double *voltage);
  * in the most recent call to pk2aux_set_vpp_level(), or drive near VDD if the
  * charge pump is shut down.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_vpp_mode(pk2aux_handle handle, enum PIN_MODE mode);
 
@@ -205,7 +221,7 @@ int pk2aux_set_vpp_mode(pk2aux_handle handle, enum PIN_MODE mode);
  * If the VDD level is very low, some of the higher VPP levels may not be available.
  * Additionally, it is not possible to set VPP less than VDD.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_vpp_level(pk2aux_handle handle, double voltage);
 
@@ -226,7 +242,7 @@ int pk2aux_stop_vpp_pump(pk2aux_handle handle);
  * not always the same as the voltage at the VPP pin (it will be different if the pin is
  * grounded or floating).
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_vpp_level(pk2aux_handle handle, double *voltage);
 
@@ -235,7 +251,7 @@ int pk2aux_get_vpp_level(pk2aux_handle handle, double *voltage);
 /*
  * Sets the mode of the PGC pin. The pin can be set to any of grounded, floating, or high.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_pgc(pk2aux_handle handle, enum PIN_MODE mode);
 
@@ -244,7 +260,7 @@ int pk2aux_set_pgc(pk2aux_handle handle, enum PIN_MODE mode);
 /*
  * Sets the mode of the PGD pin. The pin can be set to any of grounded, floating, or high.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_pgd(pk2aux_handle handle, enum PIN_MODE mode);
 
@@ -253,7 +269,7 @@ int pk2aux_set_pgd(pk2aux_handle handle, enum PIN_MODE mode);
 /*
  * Sets the mode of the AUX pin. The pin can be set to any of grounded, floating, or high.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_aux(pk2aux_handle handle, enum PIN_MODE mode);
 
@@ -266,7 +282,7 @@ int pk2aux_set_aux(pk2aux_handle handle, enum PIN_MODE mode);
  * level presented by the external circuit; if the pin is an output, the returned value is
  * the level driven by the PICkit2.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_pgc(pk2aux_handle handle, unsigned int *level);
 
@@ -279,7 +295,7 @@ int pk2aux_get_pgc(pk2aux_handle handle, unsigned int *level);
  * level presented by the external circuit; if the pin is an output, the returned value is
  * the level driven by the PICkit2.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_pgd(pk2aux_handle handle, unsigned int *level);
 
@@ -292,7 +308,7 @@ int pk2aux_get_pgd(pk2aux_handle handle, unsigned int *level);
  * level presented by the external circuit; if the pin is an output, the returned value is
  * the level driven by the PICkit2.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_aux(pk2aux_handle handle, unsigned int *level);
 
@@ -301,7 +317,7 @@ int pk2aux_get_aux(pk2aux_handle handle, unsigned int *level);
 /*
  * Initiates UART mode on the PICkit2 with the given baud rate.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_start_uart(pk2aux_handle handle, unsigned int baud);
 
@@ -310,7 +326,7 @@ int pk2aux_start_uart(pk2aux_handle handle, unsigned int baud);
 /*
  * Stops UART mode on the PICkit2.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_stop_uart(pk2aux_handle handle);
 
@@ -321,7 +337,7 @@ int pk2aux_stop_uart(pk2aux_handle handle);
  * must be of length *length. *length is updated to indicate the amount of data
  * stored.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_receive_uart(pk2aux_handle handle, void *buffer, size_t *length);
 
@@ -332,9 +348,16 @@ int pk2aux_receive_uart(pk2aux_handle handle, void *buffer, size_t *length);
  * This function will not return until all the data has been consumed or an error
  * occurs.
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success or a libusb error code on failure.
  */
 int pk2aux_send_uart(pk2aux_handle handle, const void *buffer, size_t length);
+
+
+
+/*
+ * Returns a string error message corresponding to a libusb error code.
+ */
+const char *pk2aux_error_string(int rc);
 
 #endif
 

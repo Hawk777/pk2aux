@@ -16,13 +16,12 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "pk2aux.h"
+#include <getopt.h>
+#include <libusb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
-#include <errno.h>
-#include <getopt.h>
-#include "pk2aux.h"
 
 
 
@@ -36,66 +35,71 @@ static const char SHORT_OPTIONS[] = "d:h";
 
 
 static int set_id(const char *appname, const char *path, const char *id) {
-	pk2aux_device *device;
-	pk2aux_handle handle;
+	int rc;
+	pk2aux_device *device = 0;
+	pk2aux_handle handle = 0;
+
+	/* Initialize the library. */
+	if ((rc = pk2aux_init()) < 0) {
+		goto errout;
+	}
 
 	/* Find the device. */
-	if (pk2aux_scan() < 0) {
-		perror(appname);
-		return EXIT_FAILURE;
-	}
 	device = pk2aux_find_device(path);
 	if (!device) {
-		perror(appname);
-		return EXIT_FAILURE;
+		rc = LIBUSB_ERROR_NO_DEVICE;
+		goto errout;
 	}
 
 	/* Open the device. */
-	handle = pk2aux_open(device);
-	if (!handle) {
-		perror(appname);
-		return EXIT_FAILURE;
+	if ((rc = pk2aux_open(device, &handle)) < 0) {
+		goto errout;
 	}
 
 	/* Execute the write. */
-	if (pk2aux_set_id(handle, id) < 0) {
-		perror(appname);
-		pk2aux_close(handle);
-		return EXIT_FAILURE;
+	if ((rc = pk2aux_set_id(handle, id)) < 0) {
+		goto errout;
 	}
 
-	/* Close the handle. */
-	pk2aux_close(handle);
+	rc = LIBUSB_SUCCESS;
 
-	return EXIT_SUCCESS;
+out:
+	if (handle) {
+		pk2aux_close(handle);
+		handle = 0;
+	}
+	pk2aux_exit();
+	return rc == LIBUSB_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
+
+errout:
+	fprintf(stderr, "%s: %s\n", appname, pk2aux_error_string(rc));
+	goto out;
 }
 
 
 
 static void usage(const char *appname) {
-	fprintf(stderr, "Usage: %s [options] new_unit_id\n"
+	fprintf(stderr,
+			"Usage: %s [options] [new_unit_id]\n"
 			"Options:\n"
 			" -d path, --device path      the path to the PICkit2, as printed by pk2ls\n"
-			" -h, --help                  display this usage message\n",
-			appname);
+			" -h, --help                  display this usage message\n"
+			"\n"
+			"Assigns a unit ID to a PICkit2. If no new_unit_id is provided, deletes the unit\n"
+			"ID.\n",
+		appname);
 }
 
 
 
 int main(int argc, char **argv) {
 	int rc;
-	char path[PATH_MAX + 1];
+	const char *path = 0;
 
-	path[0] = '\0';
 	while ((rc = getopt_long(argc, argv, SHORT_OPTIONS, LONG_OPTIONS, 0)) != -1) {
 		switch (rc) {
 			case 'd':
-				if (strlen(optarg) > PATH_MAX) {
-					errno = ENAMETOOLONG;
-					perror(argv[0]);
-					return EXIT_FAILURE;
-				}
-				strcpy(path, optarg);
+				path = optarg;
 				break;
 
 			case 'h':
@@ -107,11 +111,13 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if (optind != argc - 1) {
+	if (optind + 1 == argc) {
+		return set_id(argv[0], path, argv[optind]);
+	} else if (optind == argc) {
+		return set_id(argv[0], path, 0);
+	} else {
 		usage(argv[0]);
 		return EXIT_FAILURE;
 	}
-
-	return set_id(argv[0], path, argv[optind]);
 }
 

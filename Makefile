@@ -1,6 +1,7 @@
 world: apps
 
-CFLAGS := -Wall -Wextra -O2 -march=native -iquote lib/include
+CFLAGS := -Wall -Wextra -O2 -march=native -iquote lib/include `pkg-config --cflags libusb-1.0`
+LIBS := `pkg-config --libs libusb-1.0`
 APPS := ls ver reset id pin uart
 
 # Include the library makefile and each app's makefile.
@@ -13,8 +14,8 @@ apps: ${APPS:%=pk2%}
 # Each app named "pk2%" depends on its object modules, the library, libusb, and libm.
 # Also, each of the app's object files depends on the public header file.
 define APP_TEMPLATE
-pk2$(1): $$($(1)_OBJS) lib/libpk2aux.a -lusb -lm
-	$(CC) $(CFLAGS) $(CPPFLAGS) -opk2$(1) $$+
+pk2$(1): $$($(1)_OBJS) lib/libpk2aux.a -lm
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LIBS) -opk2$(1) $$+
 
 $$($(1)_OBJS): lib/include/pk2aux.h
 endef

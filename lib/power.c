@@ -16,27 +16,32 @@
  * You should have received a copy of the GNU General Public License
  * along with PK2Aux.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include "pk2aux.h"
-#include "internal.h"
 #include "cmd.h"
-#include <errno.h>
-#include <math.h>
+#include "internal.h"
 #include <assert.h>
+#include <math.h>
 
 
 
 static int get_voltages(pk2aux_handle handle, double *vdd, double *vpp) {
+	int rc;
 	unsigned char buffer[64];
 
 	buffer[0] = READ_VOLTAGES;
-	if (pk2aux_write(handle, buffer, 1) < 0)
-		return -1;
+	if ((rc = pk2aux_write(handle, buffer, 1)) < 0)
+		return rc;
 
-	if (pk2aux_read(handle, buffer) < 0)
-		return -1;
+	if ((rc = pk2aux_read(handle, buffer)) < 0)
+		return rc;
 
-	*vdd = (buffer[0] + buffer[1] * 256) * 5.0 / 65536.0;
-	*vpp = (buffer[2] + buffer[3] * 256) * 13.7 / 65536.0;
+	if (vdd) {
+		*vdd = (buffer[0] + buffer[1] * 256) * 5.0 / 65536.0;
+	}
+
+	if (vpp) {
+		*vpp = (buffer[2] + buffer[3] * 256) * 13.7 / 65536.0;
+	}
+
 	return 0;
 }
 
@@ -68,14 +73,10 @@ int pk2aux_set_vdd_mode(pk2aux_handle handle, enum PIN_MODE mode) {
 			break;
 
 		default:
-			errno = ENOSYS;
-			return -1;
+			return LIBUSB_ERROR_INVALID_PARAM;
 	}
 
-	if (pk2aux_write(handle, buffer, 4) < 0)
-		return -1;
-
-	return 0;
+	return pk2aux_write(handle, buffer, 4);
 }
 
 
@@ -87,8 +88,7 @@ int pk2aux_set_vdd_level(pk2aux_handle handle, double voltage) {
 
 	/* Check for a sensible voltage level. */
 	if (voltage < 0.0 || voltage > 5.0) {
-		errno = EDOM;
-		return -1;
+		return LIBUSB_ERROR_INVALID_PARAM;
 	}
 
 	/* Compute the duty cycle. Careful of rounding (hence the +0.5). */
@@ -105,17 +105,13 @@ int pk2aux_set_vdd_level(pk2aux_handle handle, double voltage) {
 	buffer[2] = (unsigned char) (ccpr >> 8);
 	buffer[3] = (unsigned char) fault;
 
-	if (pk2aux_write(handle, buffer, 4) < 0)
-		return -1;
-
-	return 0;
+	return pk2aux_write(handle, buffer, 4);
 }
 
 
 
 int pk2aux_get_vdd_level(pk2aux_handle handle, double *voltage) {
-	double vpp;
-	return get_voltages(handle, voltage, &vpp);
+	return get_voltages(handle, voltage, 0);
 }
 
 
@@ -146,14 +142,10 @@ int pk2aux_set_vpp_mode(pk2aux_handle handle, enum PIN_MODE mode) {
 			break;
 
 		default:
-			errno = ENOSYS;
-			return -1;
+			return LIBUSB_ERROR_INVALID_PARAM;
 	}
 
-	if (pk2aux_write(handle, buffer, 4) < 0)
-		return -1;
-
-	return 0;
+	return pk2aux_write(handle, buffer, 4);
 }
 
 
@@ -165,8 +157,7 @@ int pk2aux_set_vpp_level(pk2aux_handle handle, double voltage) {
 
 	/* Check for a sensible voltage level. */
 	if (voltage < 0.0 || voltage > 13.7) {
-		errno = EDOM;
-		return -1;
+		return LIBUSB_ERROR_INVALID_PARAM;
 	}
 
 	/* Compute the ADC target level. Careful of rounding (hence the +0.5). */
@@ -185,10 +176,8 @@ int pk2aux_set_vpp_level(pk2aux_handle handle, double voltage) {
 	buffer[4] = 0x40;
 	buffer[5] = (unsigned char) adc;
 	buffer[6] = (unsigned char) fault;
-	if (pk2aux_write(handle, buffer, 7) < 0)
-		return -1;
 
-	return 0;
+	return pk2aux_write(handle, buffer, 7);
 }
 
 
@@ -200,16 +189,13 @@ int pk2aux_stop_vpp_pump(pk2aux_handle handle) {
 	buffer[0] = EXECUTE_SCRIPT;
 	buffer[1] = 1;
 	buffer[2] = VPP_PWM_OFF;
-	if (pk2aux_write(handle, buffer, 3) < 0)
-		return -1;
 
-	return 0;
+	return pk2aux_write(handle, buffer, 3);
 }
 
 
 
 int pk2aux_get_vpp_level(pk2aux_handle handle, double *voltage) {
-	double vdd;
-	return get_voltages(handle, &vdd, voltage);
+	return get_voltages(handle, 0, voltage);
 }
 
