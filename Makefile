@@ -25,5 +25,9 @@ clean: clean-lib
 	-rm -f ${APPS:%=pk2%}
 	-rm -f ${foreach APP,${APPS},${${APP}_OBJS}}
 
-.PHONY: world apps clean
+# Install the apps by running GNU Install and putting them in /usr/local/bin/.
+install: apps
+	install -m0755 ${APPS:%=pk2%} /usr/local/bin/
+
+.PHONY: world apps clean install
 
