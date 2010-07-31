@@ -108,7 +108,7 @@ static int do_uart(const char *appname, pk2aux_handle handle, unsigned int poll_
 				return LIBUSB_ERROR_IO;
 			}
 			if (rwrc == 0) {
-				return LIBUSB_ERROR_IO;
+				return LIBUSB_SUCCESS;
 			}
 			if (rwrc > 0) {
 				/* Send the bytes to the PICkit2. */
