@@ -138,7 +138,7 @@ static int parse_baud(const char *baud_string, unsigned int *baud, unsigned int 
 		return -1;
 
 	*baud = (unsigned int) rc;
-	*poll_interval = 1000U / (*baud / 10U / 128U) * 1U / 10U;
+	*poll_interval = 1000U / *baud * 10U * 128U * 1U / 10U;
 	return 0;
 }
 
