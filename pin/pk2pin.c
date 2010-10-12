@@ -152,7 +152,7 @@ static void usage(const char *appname) {
 			"For PGC, PGD, and AUX:\n"
 			"- Set grounded grounds the pin at the interface through a small resistance.\n"
 			"- Set high drives the pin to +5V through a small resistance and clamped to\n"
-			"  interface VDD (which might be zero volts of VDD is floating or grounded).\n"
+			"  interface VDD (which might be zero volts if VDD is floating or grounded).\n"
 			"- Set floating does not drive the pin, but still clamps it to interface VDD.\n"
 			"- Query returns the driven polarity if the pin is grounded or high (even if the\n"
 			"  clamp pulls the interface pin close to ground), or the interface polarity if\n"
