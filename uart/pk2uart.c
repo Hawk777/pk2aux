@@ -85,8 +85,8 @@ static int do_uart(const char *appname, pk2aux_handle handle, unsigned int poll_
 			}
 		}
 
-		/* Wait up to 10ms to see some data from stdin - after that, go back and
-		 * poll the PICkit2 again. */
+		/* Wait up to the polling interval to see some data from stdin - after
+		 * that, go back and poll the PICkit2 again. */
 		do {
 			FD_ZERO(&rfds);
 			FD_SET(0, &rfds);
@@ -138,7 +138,10 @@ static int parse_baud(const char *baud_string, unsigned int *baud, unsigned int 
 		return -1;
 
 	*baud = (unsigned int) rc;
-	*poll_interval = 1000U / *baud * 10U * 128U * 1U / 10U;
+	*poll_interval = (unsigned int) (1000.0 / (*baud / 10.0 / 128.0) * 1.0 / 10.0);
+	if (!*poll_interval) {
+		*poll_interval = 1;
+	}
 	return 0;
 }
 
