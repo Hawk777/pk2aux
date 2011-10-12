@@ -19,343 +19,472 @@
 #if !defined PK2AUX_H
 #define PK2AUX_H
 
+/**
+ * \file
+ *
+ * \brief Defines the public API that programs can use to call into the library.
+ */
+
 #include <stddef.h>
 #include <stdint.h>
 #include <limits.h>
 
 
 
-/*
- * Describes one of the PICkit2 devices connected to the system.
+/**
+ * \brief Describes one of the PICkit2 devices connected to the system.
  */
 typedef struct pk2aux_device {
-	/* The unit ID string burned into the device, or a zero-length
-	 * string if no unit ID is burned in. */
+	/**
+	 * \brief The unit ID string burned into the device.
+	 *
+	 * Set to a zero-length string if no unit ID is burned in.
+	 */
 	char unit_id[16];
 
-	/* The bus number where the device is attached. */
+	/**
+	 * \brief The USB bus number where the device is attached.
+	 */
 	uint8_t bus_number;
 
-	/* The address of the device on its bus. */
+	/**
+	 * \brief The USB address of the device on its bus.
+	 */
 	uint8_t device_address;
 
-	/* A pointer to private data used internally by libpk2aux. */
+	/**
+	 * \brief A pointer to private data used internally by libpk2aux.
+	 */
 	void *private_data;
 } pk2aux_device;
 
 
 
-/*
- * A collection of zero or more PICkit2 devices.
+/**
+ * \brief A collection of zero or more PICkit2 devices.
  */
 typedef struct pk2aux_device_list {
-	/* The number of devices. */
+	/**
+	 * \brief The number of devices.
+	 */
 	unsigned int num_devices;
 
-	/* The devices. */
+	/**
+	 * \brief The devices.
+	 */
 	pk2aux_device *devices;
 } pk2aux_device_list;
 
 
 
-/*
- * A handle to an open PICkit2.
+/**
+ * \brief A handle to an open PICkit2.
+ *
+ * Handles of this type are used to operate on a PICkit2.
  */
 typedef struct pk2aux_handle_impl *pk2aux_handle;
 
 
 
-/*
- * A mode into which a pin can be placed.
+/**
+ * \brief A mode into which a pin can be placed.
  */
 enum PIN_MODE {
-	/* Driven to ground. */
+	/**
+	 * \brief The pin is driven to ground.
+	 *
+	 * See the individual pin-control functions for precise electrical details.
+	 */
 	PIN_MODE_GROUNDED,
-	/* Completely unconnected. */
+
+	/**
+	 * \brief The pin is not driven.
+	 *
+	 * See the individual pin-control functions for precise electrical details.
+	 */
 	PIN_MODE_FLOATING,
-	/* Connected to the positive voltage. */
+
+	/**
+	 * \brief The pin is driven high.
+	 *
+	 * See the individual pin-control functions for precise electrical details.
+	 */
 	PIN_MODE_HIGH
 };
 
 
 
-/*
- * Initializes libpk2aux and scans the system for PICkit2 devices. This function
- * must be called to initialize the library before any other functions are
- * called.
+/**
+ * \brief Initializes libpk2aux and scans the system for PICkit2 devices.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * This function must be called to initialize the library before any other functions are called.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_init(void);
 
 
 
-/*
- * Deinitializes libpk2aux. This function must be called after any other
- * functions.
+/**
+ * \brief Deinitializes libpk2aux.
+ *
+ * This function must be called after any other functions.
  */
 void pk2aux_exit(void);
 
 
 
-/*
- * Returns the array of located PICkit2 devices.
+/**
+ * \brief Returns the array of located PICkit2 devices.
  *
- * Returns the array of found programmers.
+ * \return the array of found programmers.
  */
 pk2aux_device_list pk2aux_get_devices(void);
 
 
 
-/*
- * Searches the scanned list of PICkit2 devices for the device at the given
- * path. The path may be NULL in which case the only device on the system will
- * be returned (failure if more than one devices is attached). The path string
- * should be of the form "bus_number:device_address".
+/**
+ * \brief Searches the scanned list of PICkit2 devices for the device at the given path.
  *
- * Returns the device on success or NULL on failure.
+ * \param[in] path the path of the device to look for, in the form <code>"bus_number:device_address"</code>,
+ * or null to find the only device on the system (or fail if multiple devices are attached).
+ *
+ * \return the device on success or null on failure.
  */
 pk2aux_device *pk2aux_find_device(const char *path);
 
 
 
-/*
- * Opens a PICkit2.
+/**
+ * \brief Opens a PICkit2.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] device the device to open.
+ *
+ * \param[out] handle the device handle that can be used to operate on the device.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_open(pk2aux_device *device, pk2aux_handle *handle);
 
 
 
-/*
- * Closes an open PICkit2 handle.
+/**
+ * \brief Closes an open handle.
+ *
+ * \param[in] handle the handle to close, which becomes invalid.
  */
 void pk2aux_close(pk2aux_handle handle);
 
 
 
-/*
- * Resets the PICkit2. The handle is also closed; DO NOT call pk2aux_close().
+/**
+ * \brief Resets the PICkit2.
+ *
+ * \param[in] handle the handle of the device to reset, which becomes invalid.
  */
 void pk2aux_reset(pk2aux_handle handle);
 
 
 
-/*
- * Gets the firmware version in the device.
+/**
+ * \brief Gets the firmware version in the device.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] handle the handle of the device to inspect.
+ *
+ * \param[out] major the major version of the firmware.
+ *
+ * \param[out] minor the minor version of the firmware.
+ *
+ * \param[out] micro the micro version of the firmware.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_version(pk2aux_handle handle, unsigned int *major, unsigned int *minor, unsigned int *micro);
 
 
 
-/*
- * Sets the unit ID of a PICkit2. The unit ID may be up to 15
- * characters in length. Pass a NULL pointer to remove the unit
- * ID. This is not the same as setting the unit ID to an empty string,
- * though the two situations are indistinguishable with respect to the
- * unid_id field in the pk2aux_device structure.
+/**
+ * \brief Sets the unit ID.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] handle the handle of the device whose unit ID should be set.
+ *
+ * \param[in] id the ID to set, which may be up to 15 characters in length or may be null to remove the unit ID.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_id(pk2aux_handle handle, const char *id);
 
 
 
-/*
- * Configures the VDD pin of the PICkit2. The pin may be set to grounded,
- * floating, or high. If the pin is set high, it will reflect the voltage set
- * in the most recent call to pk2aux_set_vdd_level() or a PICkit2-defined default.
+/**
+ * \brief Configures the VDD pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * The VDD pin can be:
+ * \li driven hard to ground through a transistor (\ref PIN_MODE_GROUNDED),
+ * \li allowed to float and be driven by the target circuit (\ref PIN_MODE_FLOATING), or
+ * \li driven hard to the output of a linear regulator (\ref PIN_MODE_HIGH).
+ *
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \param[in] mode the pin mode to set.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_vdd_mode(pk2aux_handle handle, enum PIN_MODE mode);
 
 
 
-/*
- * Sets the voltage on the VDD pin of the PICkit2. The voltage level of VDD may
- * be set independently to the power mode. It may be wise to allow a short delay
- * for the voltage generator to stabilize before calling pk2aux_set_vdd_mode() to
- * connect the voltage to the target circuit.
+/**
+ * \brief Sets the voltage generated by the VDD linear regulator.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * The regulator drives the pin when the pin is set (via pk2aux_set_vdd_mode()) to \ref PIN_MODE_HIGH.
+ *
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \param[in] voltage the voltage to set.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_vdd_level(pk2aux_handle handle, double voltage);
 
 
 
-/*
- * Measures the VDD voltage. This is the voltage actually present on the pin, which
- * may be produced by the PICkit2's VDD generator, may be produced by the grounding
- * circuit, or may be produced by the target circuit (if the pin is set floating).
+/**
+ * \brief Measures the voltage on the VDD pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * This may be generated by the linear regulator, be provided by the external circuit, or be ground.
+ *
+ * \param[in] handle the handle of the device to inspect.
+ *
+ * \param[out] voltage the measured voltage.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_vdd_level(pk2aux_handle handle, double *voltage);
 
 
 
-/*
- * Configures the VPP pin of the PICkit2. The pin may be set to grounded,
- * floating, or high. If the pin is set high, it will reflect the voltage set
- * in the most recent call to pk2aux_set_vpp_level(), or drive near VDD if the
- * charge pump is shut down.
+/**
+ * \brief Configures the VPP pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * The VPP pin can be:
+ * \li driven hard to ground through a transistor (\ref PIN_MODE_GROUNDED),
+ * \li allowed to float and be driven by the target circuit (\ref PIN_MODE_FLOATING), or
+ * \li attached to the output of a boost converter (\ref PIN_MODE_HIGH).
+ *
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \param[in] mode the pin mode to set.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_vpp_mode(pk2aux_handle handle, enum PIN_MODE mode);
 
 
 
-/*
- * Enables the VPP charge pump and sets the voltage it should generate. The voltage
- * level of VPP may be set independently to the power mode. It is suggested to allow
- * at least 100ms for the charge pump to stabilize before calling pk2aux_set_vpp_mode()
- * to connect the voltage to the target circuit, especially if the charge pump was
- * previously shut down.
+/**
+ * \brief Sets the voltage generated by the VPP boost converter.
  *
- * Be aware that the VPP charge pump is supplied with power from the VDD voltage generator.
- * If the VDD level is very low, some of the higher VPP levels may not be available.
- * Additionally, it is not possible to set VPP less than VDD.
+ * The pump drives the pin when the pin is set (via pk2aux_set_vpp_mode()) to \ref PIN_MODE_HIGH.
+ * A delay of 100ms should be given to allow the converter to stabilize before using its output.
+ * The converter is powered by the VDD linear regulator.
+ * If the VDD regulator's output is fairly low, some higher VPP levels may be impossible to generate.
+ * The converter also cannot output a voltage below that of the VDD regulator.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \param[in] voltage the voltage to set, which cannot be less than the output of the VDD linear regulator.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_vpp_level(pk2aux_handle handle, double voltage);
 
 
 
-/*
- * Shuts down the VPP charge pump. When the pump is shut down, setting the VPP pin high
- * will drive near VDD. Shutting down the charge pump will save power if VPP is not needed
- * for a period of time. It is highly recommended to use pk2aux_set_vpp_mode() to set the
- * mode to either floating or grounded before shutting down the charge pump.
+/**
+ * \brief Shuts down the VPP boost converter.
+ *
+ * When the converter is shut down, its output is approximately equal to the output of the VDD regulator.
+ * Shutting down the converter saves power if high voltages are not needed on VPP.
+ *
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_stop_vpp_pump(pk2aux_handle handle);
 
 
 
-/*
- * Measures the VPP voltage. This is the voltage coming out of the charge pump, which is
- * not always the same as the voltage at the VPP pin (it will be different if the pin is
- * grounded or floating).
+/**
+ * \brief Measures the voltage at the output of the VPP boost converter.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] handle the handle of the device to inspect.
+ *
+ * \param[out] voltage the measured voltage.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_vpp_level(pk2aux_handle handle, double *voltage);
 
 
 
-/*
- * Sets the mode of the PGC pin. The pin can be set to any of grounded, floating, or high.
+/**
+ * \brief Sets the mode of the PGC pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * The PGC pin can be:
+ * \li driven to ground through a transistor and a resistor (\ref PIN_MODE_GROUNDED),
+ * \li allowed to float clamped to VDD and be driven by the target circuit (\ref PIN_MODE_FLOATING), or
+ * \li driven to VDD through a transistor and a resistor (\ref PIN_MODE_HIGH).
+ *
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \param[in] mode the pin mode to set.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_pgc(pk2aux_handle handle, enum PIN_MODE mode);
 
 
 
-/*
- * Sets the mode of the PGD pin. The pin can be set to any of grounded, floating, or high.
+/**
+ * \brief Sets the mode of the PGD pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * The PGD pin can be:
+ * \li driven to ground through a transistor and a resistor (\ref PIN_MODE_GROUNDED),
+ * \li allowed to float clamped to VDD and be driven by the target circuit (\ref PIN_MODE_FLOATING), or
+ * \li driven to VDD through a transistor and a resistor (\ref PIN_MODE_HIGH).
+ *
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \param[in] mode the pin mode to set.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_pgd(pk2aux_handle handle, enum PIN_MODE mode);
 
 
 
-/*
- * Sets the mode of the AUX pin. The pin can be set to any of grounded, floating, or high.
+/**
+ * \brief Sets the mode of the AUX pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * The AUX pin can be:
+ * \li driven to ground through a transistor and a resistor (\ref PIN_MODE_GROUNDED),
+ * \li allowed to float clamped to VDD and be driven by the target circuit (\ref PIN_MODE_FLOATING), or
+ * \li driven to VDD through a transistor and a resistor (\ref PIN_MODE_HIGH).
+ *
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \param[in] mode the pin mode to set.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_set_aux(pk2aux_handle handle, enum PIN_MODE mode);
 
 
 
-/*
- * Gets the level of the PGC pin. This will be either high or low, represented by either 1
- * or 0 begin written to *level. This function does not differentiate between whether the
- * pin is an input or an output. If the pin is an input, the returned value is the sampled
- * level presented by the external circuit; if the pin is an output, the returned value is
- * the level driven by the PICkit2.
+/**
+ * \brief Gets the logic level of the PGC pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * If the PICkit2 is driving the pin, the driven polarity is returned even if the voltage is close to zero due to the VDD clamp.
+ *
+ * \param[in] handle the handle of the device to inspect.
+ *
+ * \param[out] level 0 if the pin is low, or 1 if it is high.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_pgc(pk2aux_handle handle, unsigned int *level);
 
 
 
-/*
- * Gets the level of the PGD pin. This will be either high or low, represented by either 1
- * or 0 begin written to *level. This function does not differentiate between whether the
- * pin is an input or an output. If the pin is an input, the returned value is the sampled
- * level presented by the external circuit; if the pin is an output, the returned value is
- * the level driven by the PICkit2.
+/**
+ * \brief Gets the logic level of the PGD pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * If the PICkit2 is driving the pin, the driven polarity is returned even if the voltage is close to zero due to the VDD clamp.
+ *
+ * \param[in] handle the handle of the device to inspect.
+ *
+ * \param[out] level 0 if the pin is low, or 1 if it is high.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_pgd(pk2aux_handle handle, unsigned int *level);
 
 
 
-/*
- * Gets the level of the AUX pin. This will be either high or low, represented by either 1
- * or 0 begin written to *level. This function does not differentiate between whether the
- * pin is an input or an output. If the pin is an input, the returned value is the sampled
- * level presented by the external circuit; if the pin is an output, the returned value is
- * the level driven by the PICkit2.
+/**
+ * \brief Gets the logic level of the AUX pin.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * If the PICkit2 is driving the pin, the driven polarity is returned even if the voltage is close to zero due to the VDD clamp.
+ *
+ * \param[in] handle the handle of the device to inspect.
+ *
+ * \param[out] level 0 if the pin is low, or 1 if it is high.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_get_aux(pk2aux_handle handle, unsigned int *level);
 
 
 
-/*
- * Initiates UART mode on the PICkit2 with the given baud rate.
+/**
+ * \brief Initiates UART mode.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \param[in] baud the baud rate at which to send and receive data.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_start_uart(pk2aux_handle handle, unsigned int baud);
 
 
 
-/*
- * Stops UART mode on the PICkit2.
+/**
+ * \brief Exits UART mode.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] handle the handle of the device to modify.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_stop_uart(pk2aux_handle handle);
 
 
 
-/*
- * Retrieves received data from the UART. The data is stored into *buffer, which
- * must be of length *length. *length is updated to indicate the amount of data
- * stored.
+/**
+ * \brief Retrieves received data from the UART.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] handle the handle of the device from which to read data.
+ *
+ * \param[out] buffer the buffer into which to store the data.
+ *
+ * \param[in,out] length on call, the amount of space in \p buffer; on return, the number of bytes returned.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_receive_uart(pk2aux_handle handle, void *buffer, size_t *length);
 
 
 
-/*
- * Sends data to the UART. The data at *buffer, of length length, will be sent.
- * This function will not return until all the data has been consumed or an error
- * occurs.
+/**
+ * \brief Sends data to the UART.
  *
- * Returns 0 on success or a libusb error code on failure.
+ * \param[in] handle the handle of the device to which to send data.
+ *
+ * \param[in] buffer the data to send.
+ *
+ * \param[in] length the number of bytes to send.
+ *
+ * \return 0 on success or a libusb error code on failure.
  */
 int pk2aux_send_uart(pk2aux_handle handle, const void *buffer, size_t length);
 
 
 
-/*
- * Returns a string error message corresponding to a libusb error code.
+/**
+ * \brief Returns a string error message corresponding to a libusb error code.
+ *
+ * \return the error message, in a static buffer which should not be modified or freed.
  */
 const char *pk2aux_error_string(int rc);
 

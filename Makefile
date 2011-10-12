@@ -30,5 +30,9 @@ clean: clean-lib
 install: apps
 	install -m0755 ${APPS:%=pk2%} /usr/local/bin/
 
-.PHONY: world apps clean install
+# Build documentation by running Doxygen.
+doc:
+	doxygen
+
+.PHONY: world apps clean install doc
 
