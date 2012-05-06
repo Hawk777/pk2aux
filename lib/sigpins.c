@@ -51,8 +51,12 @@ static int get_pg_modes(pk2aux_handle handle, enum PIN_MODE *pgc, enum PIN_MODE 
 
 	if (handle->pgc_floating && handle->pgd_floating) {
 		/* No need to waste USB bandwidth in this case. */
-		*pgc = PIN_MODE_FLOATING;
-		*pgd = PIN_MODE_FLOATING;
+		if (pgc) {
+			*pgc = PIN_MODE_FLOATING;
+		}
+		if (pgd) {
+			*pgd = PIN_MODE_FLOATING;
+		}
 		return 0;
 	}
 
